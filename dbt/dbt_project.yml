@@ -1,0 +1,22 @@
+name: finco
+version: "1.0.0"
+config-version: 2
+profile: finco
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: target
+clean-targets: [target, dbt_packages]
+
+vars:
+  fecha_inicio_dim: "2019-01-01"
+
+models:
+  finco:
+    silver:
+      +schema: silver
+      +materialized: table
+    gold:
+      +schema: gold
+      +materialized: table

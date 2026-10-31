@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: silver_ipc
+    description: >
+      IPC mensual (índice) desde enero de 2019, una fila por mes. Si un mes aparece en dos
+      lotes gana el lote más reciente. El IPC desde 2019 permite calcular la inflación anual de 2020.
+    columns:
+      - name: mes
+        description: Primer día del mes al que corresponde el índice.
+        data_tests: [unique, not_null]
+      - name: indice
+        description: Índice de Precios al Consumidor publicado por el Banco de la República.
+        data_tests: [not_null]
+      - name: lote_id
+        description: Lote de bronze del que viene la fila.
+      - name: cargado_en
+        description: Fecha-hora de carga de ese lote.
+
+unit_tests:
+  - name: ipc_un_registro_por_mes_desde_2019
+    description: El día de corte del mes pasa al primer día del mes y los meses anteriores a 2019 se descartan.
+    model: silver_ipc
+    given:
+      - input: source('bronze', 'ipc_raw')
+        rows:
+          - {id: 1, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", fila: '{"Periodo(MMM, AAAA)": "2018/12/31", "Índice de Precios al Consumidor (IPC)": "99.5"}'}
+          - {id: 2, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", fila: '{"Periodo(MMM, AAAA)": "2019/01/31", "Índice de Precios al Consumidor (IPC)": "100.1"}'}
+    expect:
+      rows:
+        - {mes: "2019-01-01", indice: 100.1, lote_id: "00000000-0000-0000-0000-00000000000a"}
+
+  - name: ipc_gana_el_lote_mas_reciente
+    description: Un mes repetido en dos lotes queda con el índice del lote más reciente.
+    model: silver_ipc
+    given:
+      - input: source('bronze', 'ipc_raw')
+        rows:
+          - {id: 1, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", fila: '{"Periodo(MMM, AAAA)": "2020/01/31", "Índice de Precios al Consumidor (IPC)": "103.0"}'}
+          - {id: 2, lote_id: "00000000-0000-0000-0000-00000000000b", cargado_en: "2026-10-02 00:00:00+00", fila: '{"Periodo(MMM, AAAA)": "2020/01/31", "Índice de Precios al Consumidor (IPC)": "103.2"}'}
+    expect:
+      rows:
+        - {mes: "2020-01-01", indice: 103.2, lote_id: "00000000-0000-0000-0000-00000000000b"}

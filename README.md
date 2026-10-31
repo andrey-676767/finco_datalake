@@ -1,10 +1,37 @@
-# Plan de Ciclo de Vida del Software — Lakehouse Analítico de Datos Financieros Públicos
+# Plan de Ciclo de Vida del Software — Lakehouse Analítico de Datos Financieros Públicos (arquitectura híbrida: bronze en Parquet, silver y gold en PostgreSQL con dbt)
 
 **Materia:** Ingeniería de Software — Universidad Católica Luis Amigó
 **Metodología:** Scrum (4 sprints de 2 semanas)
 **Equipo:** David Restrepo (PO + ingesta), Juan Esteban (modelos dbt), Andrey Machado (Docker / orquestación / Metabase)
 **Documento base:** `plan-proyecto-lakehouse-financiero.md` (fuente de verdad del alcance)
 **Versión:** 1.0 — 1 de octubre de 2026
+
+---
+
+## Inicio rápido (instalación para el evaluador)
+
+Requisitos: solo Docker con Compose. No hace falta Python ni datos previos del proyecto.
+
+```sh
+git clone https://github.com/DavidRestrepo66/finco_datalake_david.git
+cd finco_datalake_david
+cp .env.example .env
+docker compose up -d                 # PostgreSQL (bronze, silver, gold) y Metabase
+docker compose run --rm pipeline     # ingesta de TRM, IPC y tasa + dbt build + tablero
+```
+
+Cuando el pipeline imprime `Pipeline completo en …`, los datos están cargados y el tablero quedó creado.
+
+| Qué | Cómo |
+|---|---|
+| Tablero «Tablero macroeconómico» | http://localhost:3000 |
+| App web de consulta y descarga CSV | `docker compose --profile app up app` → http://localhost:8501 |
+| Linaje de dbt | `cd dbt && dbt docs generate --profiles-dir . && dbt docs serve --profiles-dir .` |
+
+Los puertos y las credenciales se toman de `.env` (copiado de `.env.example`). La primera
+ejecución descarga las imágenes de Docker y consulta la API de Socrata para la TRM, así que
+necesita conexión a internet. El detalle de cada componente está en `docs/manuales/manual.md` y una
+corrida de referencia en `docs/pruebas/evidencia/ejecucion-2026-10-30.md`.
 
 ---
 
@@ -159,10 +186,11 @@ lakehouse-financiero/
 ├── .env.example               # Variables de entorno sin secretos reales
 ├── pipeline.py                # Comando único: ingesta → dbt build (RF-08)
 ├── verificar.py               # Verificación local antes de cada PR (sección 7.1)
+├── data/fuentes/             # CSV del Banco de la República (IPC y tasa), versionados (D-10)
 ├── ingesta/
 │   ├── extractores/
 │   │   ├── trm_socrata.py
-│   │   └── banrep.py          # IPC y tasa de intervención
+│   │   └── banrep.py          # Lector de los CSV de IPC y tasa de intervención
 │   ├── carga_bronze.py
 │   └── tests/                 # pytest
 ├── dbt/
@@ -483,20 +511,20 @@ Cada ejecución se registra en `docs/pruebas/evidencia/` con fecha, quién la ej
 
 | Requisito | Descripción breve | HU | Caso de uso | Código (PR) | Prueba | Estado |
 |---|---|---|---|---|---|---|
-| RF-01 | Extraer TRM, IPC y tasa | HU-03, 04, 05, 06 | CU-02 | | CP-ING-01, 02 | Pendiente |
-| RF-01b | Conciliar periodicidades (Opción B) | HU-08, 09 | — | | CP-SIL-02, CP-GLD-02 | Pendiente |
-| RF-02 | Conservar crudos con metadatos | HU-03, 04, 05 | CU-02 | | CP-ING-03 | Pendiente |
-| RF-03 | Limpiar, tipar y deduplicar | HU-07, 08 | — | | CP-SIL-01 | Pendiente |
-| RF-04 | Esquema estrella en gold | HU-09 | — | | CP-GLD-02 | Pendiente |
-| RF-05 | Pruebas automáticas de calidad | HU-07, 08, 10 | CU-03 | | CP-SIL-01, CP-GLD-01 | Pendiente |
-| RF-06 | Consultar linaje | HU-11 | CU-05 | | Aceptación HU-11 | Pendiente |
-| RF-07 | Tablero con 3+ visualizaciones | HU-13 | CU-04 | | CP-DASH-01 | Pendiente |
-| RF-08 | Ejecución con un solo comando | HU-12, 02 | CU-01 | | CP-E2E-01 | Pendiente |
-| RNF-01 | Entorno con Docker Compose | HU-01, 02 | CU-01 | | CP-INST-01 | Pendiente |
-| RNF-02 | Pipeline en menos de X minutos | HU-12 | CU-01 | | Medición de rendimiento | Pendiente (umbral por definir) |
-| RNF-03 | Estándar de estilo | Todas | — | | `verificar.py` | Pendiente |
-| RNF-04 | Transformaciones versionadas | Todas | — | Historial Git | — | Pendiente |
-| RNF-05 | Documentación dbt automática | HU-11 | CU-05 | | Aceptación HU-11 | Pendiente |
+| RF-01 | Extraer TRM, IPC y tasa | HU-03, 04, 05, 06 | CU-02 | PR #3, #8, #10 | CP-ING-01, 02 | Hecho |
+| RF-01b | Conciliar periodicidades (Opción B) | HU-08, 09 | — | PR #14, #22 | CP-SIL-02, CP-GLD-02 | Hecho |
+| RF-02 | Conservar crudos con metadatos | HU-03, 04, 05 | CU-02 | PR #3 | CP-ING-03 | Hecho |
+| RF-03 | Limpiar, tipar y deduplicar | HU-07, 08 | — | PR #7, #14 | CP-SIL-01 | Hecho |
+| RF-04 | Esquema estrella en gold | HU-09 | — | PR #9, #22 | CP-GLD-02 | Hecho |
+| RF-05 | Pruebas automáticas de calidad | HU-07, 08, 10 | CU-03 | PR #7, #14, #22 | CP-SIL-01, CP-GLD-01 | Hecho |
+| RF-06 | Consultar linaje | HU-11 | CU-05 | PR #17 | Aceptación HU-11 | Hecho |
+| RF-07 | Tablero con 3+ visualizaciones | HU-13 | CU-04 | PR #16, #18 | CP-DASH-01 | Hecho, verificado por API |
+| RF-08 | Ejecución con un solo comando | HU-12, 02 | CU-01 | PR #12 | CP-E2E-01 | Hecho, verificado en Docker y en clon limpio |
+| RNF-01 | Entorno con Docker Compose | HU-01, 02 | CU-01 | PR #1 | CP-INST-01 | Hecho, verificado en clon limpio |
+| RNF-02 | Pipeline en menos de X minutos | HU-12 | CU-01 | PR #12 | Medición de rendimiento | Medido: 12.0 s (umbral < 5 min) |
+| RNF-03 | Estándar de estilo | Todas | — | `verificar.py` | `verificar.py` | Hecho |
+| RNF-04 | Transformaciones versionadas | Todas | — | Historial Git | — | Hecho |
+| RNF-05 | Documentación dbt automática | HU-11 | CU-05 | PR #17 | Aceptación HU-11 | Hecho |
 
 ---
 

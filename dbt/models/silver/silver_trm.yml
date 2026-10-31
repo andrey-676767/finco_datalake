@@ -1,0 +1,48 @@
+version: 2
+
+models:
+  - name: silver_trm
+    description: >
+      TRM diaria. Una fila por día calendario; cada vigencia de bronze se expande a los
+      días que cubre. Si un día aparece en dos lotes gana el lote más reciente.
+    columns:
+      - name: fecha
+        description: Día calendario al que aplica el valor.
+        data_tests: [unique, not_null]
+      - name: valor
+        description: Pesos por dólar.
+        data_tests: [not_null]
+      - name: vigencia_desde
+        description: Inicio de la vigencia original publicada por la fuente.
+      - name: vigencia_hasta
+        description: Fin de la vigencia original publicada por la fuente.
+      - name: lote_id
+        description: Lote de bronze del que viene la fila.
+      - name: cargado_en
+        description: Fecha-hora de carga de ese lote.
+
+unit_tests:
+  - name: trm_expande_vigencias_a_dias
+    description: Una vigencia de varios días produce una fila por día, con la vigencia original.
+    model: silver_trm
+    given:
+      - input: source('bronze', 'trm_raw')
+        rows:
+          - {id: 1, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", valor: "3262.05", vigenciadesde: "2020-01-04T00:00:00.000", vigenciahasta: "2020-01-06T00:00:00.000"}
+    expect:
+      rows:
+        - {fecha: "2020-01-04", valor: 3262.05, vigencia_desde: "2020-01-04", vigencia_hasta: "2020-01-06"}
+        - {fecha: "2020-01-05", valor: 3262.05, vigencia_desde: "2020-01-04", vigencia_hasta: "2020-01-06"}
+        - {fecha: "2020-01-06", valor: 3262.05, vigencia_desde: "2020-01-04", vigencia_hasta: "2020-01-06"}
+
+  - name: trm_gana_el_lote_mas_reciente
+    description: Un día repetido en dos lotes queda con el valor del lote más reciente.
+    model: silver_trm
+    given:
+      - input: source('bronze', 'trm_raw')
+        rows:
+          - {id: 1, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", valor: "3000.00", vigenciadesde: "2020-01-03T00:00:00.000", vigenciahasta: "2020-01-03T00:00:00.000"}
+          - {id: 2, lote_id: "00000000-0000-0000-0000-00000000000b", cargado_en: "2026-10-02 00:00:00+00", valor: "3258.84", vigenciadesde: "2020-01-03T00:00:00.000", vigenciahasta: "2020-01-03T00:00:00.000"}
+    expect:
+      rows:
+        - {fecha: "2020-01-03", valor: 3258.84, vigencia_desde: "2020-01-03", vigencia_hasta: "2020-01-03", lote_id: "00000000-0000-0000-0000-00000000000b"}

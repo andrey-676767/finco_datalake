@@ -1,0 +1,133 @@
+version: 2
+
+models:
+  - name: dim_fecha
+    description: >
+      Dimensión de fecha: un día calendario por fila, desde el 2019-01-01 (el IPC empieza en
+      enero de 2019) hasta el último día con TRM en silver. Los hechos se unen a ella por `fecha`.
+    columns:
+      - name: fecha
+        description: Día calendario. Llave de la dimensión.
+        data_tests: [unique, not_null]
+      - name: anio
+        description: Año de la fecha.
+      - name: mes
+        description: Mes de la fecha (1 a 12).
+      - name: trimestre
+        description: Trimestre de la fecha (1 a 4).
+      - name: anio_mes
+        description: Primer día del mes de la fecha. Llave del hecho mensual.
+      - name: dia_semana
+        description: Día de la semana ISO (1 = lunes, 7 = domingo).
+      - name: es_fin_de_semana
+        description: Verdadero si la fecha es sábado o domingo.
+
+  - name: fact_trm_diaria
+    description: >
+      Hecho diario de la TRM. Una fila por día calendario, tomada de silver.trm.
+    columns:
+      - name: fecha
+        description: Día al que aplica el valor. Llave del hecho y referencia a dim_fecha.
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_fecha')
+                field: fecha
+      - name: valor
+        description: TRM en pesos por dólar (de silver.trm.valor).
+        data_tests: [not_null]
+      - name: vigencia_desde
+        description: Inicio de la vigencia original publicada por la fuente.
+      - name: vigencia_hasta
+        description: Fin de la vigencia original publicada por la fuente.
+      - name: lote_id
+        description: Lote de bronze del que viene el valor.
+
+  - name: fact_indicadores_mensual
+    description: >
+      Hecho mensual de indicadores, desde enero de 2020. Viene de silver.ipc y
+      silver.tasa_intervencion; la tasa es la vigente el último día del mes.
+    columns:
+      - name: anio_mes
+        description: Primer día del mes. Llave del hecho y referencia a dim_fecha.
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_fecha')
+                field: fecha
+      - name: ipc
+        description: Índice de Precios al Consumidor del mes (de silver.ipc.indice).
+        data_tests: [not_null]
+      - name: inflacion_anual
+        description: Variación porcentual del IPC frente al mismo mes del año anterior, calculada con silver.ipc.
+        data_tests: [not_null]
+      - name: tasa_vigente
+        description: Tasa de política monetaria vigente el último día del mes (de silver.tasa_intervencion.tasa).
+        data_tests: [not_null]
+
+  - name: mart_mensual
+    description: >
+      Mart mensual para el tablero y la app: una fila por mes con TRM promedio (de
+      fact_trm_diaria) y el IPC, la inflación anual y la tasa vigente (de fact_indicadores_mensual).
+      El mes sin TRM queda con trm_promedio nulo.
+    columns:
+      - name: anio_mes
+        description: Primer día del mes. Llave del mart.
+        data_tests: [unique, not_null]
+      - name: trm_promedio
+        description: Promedio de la TRM diaria del mes, en pesos por dólar (de gold.fact_trm_diaria.valor).
+      - name: ipc
+        description: IPC del mes (de gold.fact_indicadores_mensual.ipc).
+      - name: inflacion_anual
+        description: Inflación anual en porcentaje (de gold.fact_indicadores_mensual.inflacion_anual).
+      - name: tasa_vigente
+        description: Tasa de política monetaria vigente al cierre del mes (de gold.fact_indicadores_mensual.tasa_vigente).
+
+
+unit_tests:
+  - name: dim_fecha_cubre_cada_dia_desde_2019
+    description: Genera un día por fila desde 2019-01-01 hasta el último día de la TRM, con sus atributos.
+    model: dim_fecha
+    given:
+      - input: ref('silver_trm')
+        rows:
+          - {fecha: "2019-01-06"}
+    expect:
+      rows:
+        - {fecha: "2019-01-01", anio: 2019, mes: 1, trimestre: 1, anio_mes: "2019-01-01", dia_semana: 2, es_fin_de_semana: false}
+        - {fecha: "2019-01-02", anio: 2019, mes: 1, trimestre: 1, anio_mes: "2019-01-01", dia_semana: 3, es_fin_de_semana: false}
+        - {fecha: "2019-01-03", anio: 2019, mes: 1, trimestre: 1, anio_mes: "2019-01-01", dia_semana: 4, es_fin_de_semana: false}
+        - {fecha: "2019-01-04", anio: 2019, mes: 1, trimestre: 1, anio_mes: "2019-01-01", dia_semana: 5, es_fin_de_semana: false}
+        - {fecha: "2019-01-05", anio: 2019, mes: 1, trimestre: 1, anio_mes: "2019-01-01", dia_semana: 6, es_fin_de_semana: true}
+        - {fecha: "2019-01-06", anio: 2019, mes: 1, trimestre: 1, anio_mes: "2019-01-01", dia_semana: 7, es_fin_de_semana: true}
+
+  - name: dim_fecha_trimestre_y_mes
+    description: Una fecha de otro trimestre queda con su trimestre y el primer día de su mes.
+    model: dim_fecha
+    overrides:
+      vars:
+        fecha_inicio_dim: "2019-05-17"
+    given:
+      - input: ref('silver_trm')
+        rows:
+          - {fecha: "2019-05-17"}
+    expect:
+      rows:
+        - {fecha: "2019-05-17", anio: 2019, mes: 5, trimestre: 2, anio_mes: "2019-05-01", dia_semana: 5, es_fin_de_semana: false}
+
+  - name: fact_trm_diaria_toma_los_valores_de_silver
+    description: El hecho conserva fecha, valor, vigencia original y lote de silver.trm.
+    model: fact_trm_diaria
+    given:
+      - input: ref('silver_trm')
+        rows:
+          - {fecha: "2020-01-04", valor: 3262.05, vigencia_desde: "2020-01-04", vigencia_hasta: "2020-01-06", lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00"}
+          - {fecha: "2020-01-05", valor: 3262.05, vigencia_desde: "2020-01-04", vigencia_hasta: "2020-01-06", lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00"}
+    expect:
+      rows:
+        - {fecha: "2020-01-04", valor: 3262.05, vigencia_desde: "2020-01-04", vigencia_hasta: "2020-01-06", lote_id: "00000000-0000-0000-0000-00000000000a"}
+        - {fecha: "2020-01-05", valor: 3262.05, vigencia_desde: "2020-01-04", vigencia_hasta: "2020-01-06", lote_id: "00000000-0000-0000-0000-00000000000a"}

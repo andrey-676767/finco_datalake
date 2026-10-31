@@ -1,0 +1,62 @@
+version: 2
+
+models:
+  - name: silver_tasa_intervencion
+    description: >
+      Tasa de política monetaria por periodo de vigencia. Bronze trae un valor por día;
+      aquí los días consecutivos con la misma tasa se colapsan en un periodo con fecha_inicio
+      y fecha_fin, sin solapes. Solo quedan los periodos vigentes desde el 2020-01-01; el que
+      cubre esa fecha conserva su fecha_inicio original. El periodo vigente termina en el último
+      día publicado por la fuente.
+    columns:
+      - name: fecha_inicio
+        description: Primer día en que rige la tasa.
+        data_tests: [unique, not_null]
+      - name: fecha_fin
+        description: Último día en que rige la tasa (el último día publicado, si sigue vigente).
+        data_tests: [unique, not_null]
+      - name: tasa
+        description: Tasa de política monetaria, en porcentaje.
+        data_tests: [not_null]
+
+unit_tests:
+  - name: tasa_colapsa_dias_en_periodos_de_vigencia
+    description: Días consecutivos con la misma tasa forman un periodo; el cambio de tasa abre otro sin solape.
+    model: silver_tasa_intervencion
+    given:
+      - input: source('bronze', 'tasa_intervencion_raw')
+        rows:
+          - {id: 1, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", fila: '{"Periodo(MMM DD, AAAA)": "2019-12-30", "Tasa de política monetaria": "4.25"}'}
+          - {id: 2, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", fila: '{"Periodo(MMM DD, AAAA)": "2019-12-31", "Tasa de política monetaria": "4.25"}'}
+          - {id: 3, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", fila: '{"Periodo(MMM DD, AAAA)": "2020-01-01", "Tasa de política monetaria": "4.25"}'}
+          - {id: 4, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", fila: '{"Periodo(MMM DD, AAAA)": "2020-01-02", "Tasa de política monetaria": "4.50"}'}
+          - {id: 5, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", fila: '{"Periodo(MMM DD, AAAA)": "2020-01-03", "Tasa de política monetaria": "4.50"}'}
+    expect:
+      rows:
+        - {fecha_inicio: "2019-12-30", fecha_fin: "2020-01-01", tasa: 4.25}
+        - {fecha_inicio: "2020-01-02", fecha_fin: "2020-01-03", tasa: 4.50}
+
+  - name: tasa_descarta_periodos_anteriores_a_2020
+    description: Un periodo que termina antes de 2020 no aparece.
+    model: silver_tasa_intervencion
+    given:
+      - input: source('bronze', 'tasa_intervencion_raw')
+        rows:
+          - {id: 1, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", fila: '{"Periodo(MMM DD, AAAA)": "2019-12-30", "Tasa de política monetaria": "4.00"}'}
+          - {id: 2, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", fila: '{"Periodo(MMM DD, AAAA)": "2019-12-31", "Tasa de política monetaria": "4.25"}'}
+          - {id: 3, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", fila: '{"Periodo(MMM DD, AAAA)": "2020-01-01", "Tasa de política monetaria": "4.50"}'}
+    expect:
+      rows:
+        - {fecha_inicio: "2020-01-01", fecha_fin: "2020-01-01", tasa: 4.50}
+
+  - name: tasa_gana_el_lote_mas_reciente
+    description: Un día repetido en dos lotes toma la tasa del lote más reciente.
+    model: silver_tasa_intervencion
+    given:
+      - input: source('bronze', 'tasa_intervencion_raw')
+        rows:
+          - {id: 1, lote_id: "00000000-0000-0000-0000-00000000000a", cargado_en: "2026-10-01 00:00:00+00", fila: '{"Periodo(MMM DD, AAAA)": "2020-01-01", "Tasa de política monetaria": "4.00"}'}
+          - {id: 2, lote_id: "00000000-0000-0000-0000-00000000000b", cargado_en: "2026-10-02 00:00:00+00", fila: '{"Periodo(MMM DD, AAAA)": "2020-01-01", "Tasa de política monetaria": "4.50"}'}
+    expect:
+      rows:
+        - {fecha_inicio: "2020-01-01", fecha_fin: "2020-01-01", tasa: 4.50}

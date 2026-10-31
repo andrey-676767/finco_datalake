@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+dbt/target/
+dbt/logs/
+data/bronze/
+dbt/.user.yml
+.engram/

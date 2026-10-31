@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: bronze
+    schema: bronze
+    tables:
+      - name: trm_raw
+        description: TRM tal como la entrega la fuente, un lote por ejecución del extractor.
+      - name: ipc_raw
+        description: Filas del CSV de IPC del Banco de la República, completas en `fila` (jsonb, texto). Un lote por carga.
+      - name: tasa_intervencion_raw
+        description: Filas del CSV de tasa de política monetaria del Banco de la República, completas en `fila` (jsonb, texto). Un lote por carga.
